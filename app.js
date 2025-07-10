@@ -1,10 +1,9 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, onSnapshot, writeBatch, updateDoc, arrayUnion, arrayRemove, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, doc, onSnapshot, writeBatch, updateDoc, arrayUnion, arrayRemove, deleteField, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-/* --- あなたの情報を入力してください --- */
 
-// 1. Firebaseプロジェクトの設定情報をここに貼り付け
+
 const firebaseConfig = {
   apiKey: "AIzaSyDkgSR2WXVMbghkUkBp2xT3gmXndUW70bQ",
   authDomain: "handout-manager.firebaseapp.com",
@@ -15,26 +14,26 @@ const firebaseConfig = {
   measurementId: "G-LNYDWJZGZL"
 };
 
-// 2. Cloudinaryの情報をここに貼り付け
 const CLOUDINARY_CLOUD_NAME = "dgnloysyh";
 const CLOUDINARY_UPLOAD_PRESET = "cvw7nkty";
-
-/* --- ここまで --- */
 
 
 const CATEGORIES = ['1年生', '2年生', '3年生', '4年生', '5年生', '6年生', '部活動'];
 const INITIAL_GROUP_IDS = ['A', 'B', 'C', 'D'];
 const STATUS = { COLLECTED: 'collected', UNCOLLECTED: 'uncollected', NOT_REQUIRED: 'not_required', NOT_APPLICABLE: 'na' };
 const EMOJI_MAP = { [STATUS.COLLECTED]: '✅', [STATUS.UNCOLLECTED]: '🟡', [STATUS.NOT_REQUIRED]: '🚫' };
-const COLLECTION_NAME = 'handouts_data_v2'; 
+const COLLECTION_NAME = 'handouts_data_v11_inventory_fix'; 
+const INVENTORY_DOC_ID = 'committee_inventory';
 
 const $ = (selector) => document.querySelector(selector);
 let db, auth;
-let unsubscribe;
+let unsubscribeFromCollection;
 let selectedCategory = '1年生';
-let currentCategoryData = null;
+let allCategoriesData = {}; 
+let committeeInventory = {};
 let activeModalTarget = {};
 let isAppReady = false;
+let inventoryChart = null;
 
 const showLoader = (message = '') => {
     $('#loader-container').style.display = 'flex';
@@ -59,7 +58,7 @@ const getInitialData = (category) => {
         materials.forEach(m => {
             groups[groupId].items[m] = {
                 status: (m === 'すのこ' || m === 'ドア') && isLowGrade ? STATUS.NOT_APPLICABLE : STATUS.UNCOLLECTED,
-                message: '', imageUrl: '', timestamp: '', updatedBy: ''
+                message: '', imageUrl: '', timestamp: '', updatedBy: '', required: 0
             };
         });
     });
@@ -74,6 +73,8 @@ const initializeFirestoreData = async () => {
             const docRef = doc(db, COLLECTION_NAME, category);
             batch.set(docRef, getInitialData(category));
         }
+        const inventoryRef = doc(db, COLLECTION_NAME, INVENTORY_DOC_ID);
+        batch.set(inventoryRef, {すのこ: 0, 暗幕: 0, ドア: 0});
         await batch.commit();
     } catch (error) { console.error("Error initializing data: ", error); }
 };
@@ -150,40 +151,208 @@ const getNextStatus = (current) => {
     return cycle[(cycle.indexOf(current) + 1) % cycle.length];
 };
 
-const subscribeToData = () => {
-    if (unsubscribe) unsubscribe();
-    const docRef = doc(db, COLLECTION_NAME, selectedCategory);
-    unsubscribe = onSnapshot(docRef, (docSnap) => {
-        hideLoader();
-        if (docSnap.exists()) {
-            currentCategoryData = docSnap.data();
-            renderHeader(currentCategoryData.materials);
-            renderBody(currentCategoryData);
-        } else {
-            initializeFirestoreData();
+const renderApp = () => {
+    hideLoader();
+    const currentData = allCategoriesData[selectedCategory];
+    if (!currentData) return;
+    
+    renderHeader(currentData.materials);
+    renderBody(currentData);
+    
+    if (!$('#view-inventory').classList.contains('hidden')) {
+        renderCommitteeInventory();
+        renderRequirementsTable();
+        updateChart();
+    }
+};
+
+const renderCommitteeInventory = () => {
+    const allMaterials = Object.keys(committeeInventory).sort();
+    const container = $('#committee-inventory-inputs');
+    container.innerHTML = allMaterials.map(m => `
+        <div class="flex items-center">
+            <label class="w-24 font-medium text-slate-700">${m}</label>
+            <input type="number" min="0" data-item-name="${m}" value="${committeeInventory[m] || 0}" class="inventory-input w-full border-slate-300 rounded-md p-2 focus:ring-indigo-500 focus:border-indigo-500">
+        </div>
+    `).join('');
+};
+
+const renderRequirementsTable = () => {
+    const allMaterials = Object.keys(committeeInventory).sort();
+    $('#requirements-table-header').innerHTML = `
+        <tr class="border-b border-slate-200">
+            <th class="p-2 text-left font-semibold text-slate-600">カテゴリ/グループ</th>
+            ${allMaterials.map(m => `<th class="p-2 font-semibold text-slate-600">${m}</th>`).join('')}
+        </tr>
+    `;
+
+    let tableBodyHtml = '';
+    CATEGORIES.forEach(category => {
+        const categoryData = allCategoriesData[category];
+        if (categoryData && categoryData.groups) {
+            const sortedGroups = Object.values(categoryData.groups).sort((a,b) => a.order - b.order);
+            sortedGroups.forEach(group => {
+                tableBodyHtml += `<tr>
+                    <td class="p-2 font-semibold text-slate-700">${category.replace('年生', '年')}-${group.name}</td>
+                    ${allMaterials.map(m => `
+                        <td class="p-1">
+                            <input type="number" min="0" data-category="${category}" data-group-id="${group.id}" data-item-name="${m}" value="${group.items[m]?.required || 0}" class="requirement-input w-16 text-center border-slate-300 rounded-md p-1 focus:ring-indigo-500 focus:border-indigo-500">
+                        </td>
+                    `).join('')}
+                </tr>`;
+            });
         }
-    }, (error) => { console.error("Error subscribing:", error); hideLoader(); });
+    });
+    $('#requirements-table-body').innerHTML = tableBodyHtml;
+};
+
+const updateChart = () => {
+    const allMaterials = Object.keys(committeeInventory).sort();
+    const totalRequired = {};
+    allMaterials.forEach(m => {
+        let sum = 0;
+        Object.values(allCategoriesData).forEach(catData => {
+            if(catData && catData.groups) {
+                sum += Object.values(catData.groups).reduce((s, group) => s + (group.items[m]?.required || 0), 0);
+            }
+        });
+        totalRequired[m] = sum;
+    });
+
+    const chartData = {
+        labels: allMaterials,
+        datasets: [
+            { label: '必要数', data: allMaterials.map(m => totalRequired[m]), backgroundColor: 'rgba(255, 99, 132, 0.5)' },
+            { label: '在庫数', data: allMaterials.map(m => committeeInventory[m] || 0), backgroundColor: 'rgba(54, 162, 235, 0.5)' }
+        ]
+    };
+
+    const ctx = $('#inventory-chart').getContext('2d');
+    if (inventoryChart) {
+        inventoryChart.data = chartData;
+        inventoryChart.update();
+    } else {
+        inventoryChart = new Chart(ctx, { type: 'bar', data: chartData, options: { scales: { y: { beginAtZero: true } }, responsive: true, maintainAspectRatio: false } });
+    }
+};
+
+const calculateAndDisplayAllocation = () => {
+    const allMaterials = Object.keys(committeeInventory).sort();
+    let html = '';
+
+    const priorityOrder = ['6年生', '5年生', '4年生', '3年生', '2年生', '1年生', '部活動'];
+
+    allMaterials.forEach(item => {
+        let supply = committeeInventory[item] || 0;
+        
+        const demandList = [];
+        priorityOrder.forEach(category => {
+            const categoryData = allCategoriesData[category];
+            if (categoryData && categoryData.groups) {
+                Object.values(categoryData.groups).sort((a,b) => a.order - b.order).forEach(group => {
+                    const required = group.items[item]?.required || 0;
+                    if (required > 0) {
+                        demandList.push({ category, group, required });
+                    }
+                });
+            }
+        });
+
+        const totalDemand = demandList.reduce((sum, d) => sum + d.required, 0);
+        html += `<div class="mb-6"><h4 class="font-bold text-lg text-indigo-700 mb-2">${item}</h4>`;
+        html += `<p class="text-sm mb-2">在庫: ${supply} / 全体必要数: ${totalDemand}</p>`;
+
+        if (totalDemand === 0) {
+            html += `<p class="text-sm text-slate-500">必要としているグループはありません。</p></div>`;
+            return;
+        }
+
+        const allocation = {}; 
+        demandList.forEach(d => {
+            const allocatedAmount = Math.min(d.required, supply);
+            allocation[d.group.id] = allocatedAmount;
+            supply -= allocatedAmount;
+        });
+
+        html += `<table class="w-full text-sm text-left">
+            <thead class="bg-slate-100"><tr><th class="p-2 font-semibold">グループ</th><th class="p-2 font-semibold">必要数</th><th class="p-2 font-semibold">分配数</th></tr></thead>
+            <tbody>`;
+        
+        priorityOrder.forEach(category => {
+             const categoryData = allCategoriesData[category];
+             if (categoryData && categoryData.groups) {
+                Object.values(categoryData.groups).sort((a,b) => a.order - b.order).forEach(group => {
+                    const required = group.items[item]?.required || 0;
+                    if(required > 0) {
+                        const allocated = allocation[group.id] || 0;
+                        const textColor = allocated < required ? 'text-red-600' : 'text-green-600';
+                        html += `<tr class="border-b"><td class="p-2">${category.replace('年生', '年')}-${group.name}</td><td class="p-2">${required}</td><td class="p-2 font-bold ${textColor}">${allocated}</td></tr>`;
+                    }
+                });
+             }
+        });
+
+        html += `</tbody></table></div>`;
+    });
+    
+    $('#allocation-result').innerHTML = html;
 };
 
 const setupEventListeners = () => {
+    // Main Tabs
+    $('#tab-collection').addEventListener('click', () => {
+        $('#view-collection').classList.remove('hidden');
+        $('#view-inventory').classList.add('hidden');
+        $('#tab-collection').classList.add('active');
+        $('#tab-inventory').classList.remove('active');
+    });
+    $('#tab-inventory').addEventListener('click', () => {
+        $('#view-inventory').classList.remove('hidden');
+        $('#view-collection').classList.add('hidden');
+        $('#tab-inventory').classList.add('active');
+        $('#tab-collection').classList.remove('active');
+        renderCommitteeInventory();
+        renderRequirementsTable();
+        updateChart();
+    });
+
+    // Inventory View Listeners
+    $('#committee-inventory-inputs').addEventListener('change', async (e) => {
+        if (e.target.matches('.inventory-input')) {
+            const itemName = e.target.dataset.itemName;
+            const value = parseInt(e.target.value, 10) || 0;
+            const docRef = doc(db, COLLECTION_NAME, INVENTORY_DOC_ID);
+            await updateDoc(docRef, { [itemName]: value });
+        }
+    });
+     $('#requirements-table-body').addEventListener('change', async (e) => {
+        if (e.target.matches('.requirement-input')) {
+            const { category, groupId, itemName } = e.target.dataset;
+            const value = parseInt(e.target.value, 10) || 0;
+            const docRef = doc(db, COLLECTION_NAME, category);
+            await updateDoc(docRef, { [`groups.${groupId}.items.${itemName}.required`]: value });
+        }
+    });
+    $('#calculate-allocation-btn').addEventListener('click', calculateAndDisplayAllocation);
+
+    // Collection View Listeners
     $('#category-selector').addEventListener('click', e => {
         const button = e.target.closest('.category-tab');
         if (button && isAppReady) {
             selectedCategory = button.dataset.category;
-            showLoader('データを読み込み中...');
             renderCategorySelectors();
-            subscribeToData();
+            renderApp();
         }
     });
 
     $('#status-table-body').addEventListener('click', async e => {
         const button = e.target.closest('button');
-        if (!button || !currentCategoryData || !isAppReady) return;
+        if (!button || !allCategoriesData[selectedCategory] || !isAppReady) return;
         const { groupId, material, currentName, groupName } = button.dataset;
         activeModalTarget = { groupId, material };
 
         if (button.matches('.btn-toggle')) {
-            const item = currentCategoryData.groups[groupId].items[material];
+            const item = allCategoriesData[selectedCategory].groups[groupId].items[material];
             const newStatus = getNextStatus(item.status);
             const timestamp = new Date().toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
             const docRef = doc(db, COLLECTION_NAME, selectedCategory);
@@ -193,15 +362,15 @@ const setupEventListeners = () => {
                 [`groups.${groupId}.items.${material}.updatedBy`]: auth.currentUser.uid,
              });
         } else if (button.matches('.btn-message')) {
-            const currentMessage = currentCategoryData.groups[groupId].items[material].message;
-            $('#message-modal-target').textContent = `${currentCategoryData.groups[groupId].name} ${material}`;
+            const currentMessage = allCategoriesData[selectedCategory].groups[groupId].items[material].message;
+            $('#message-modal-target').textContent = `${allCategoriesData[selectedCategory].groups[groupId].name} ${material}`;
             $('#message-input').value = currentMessage;
             $('#message-modal').classList.remove('hidden');
             $('#message-input').focus();
         } else if (button.matches('.btn-image')) {
-            const imageUrl = currentCategoryData.groups[groupId].items[material].imageUrl;
+            const imageUrl = allCategoriesData[selectedCategory].groups[groupId].items[material].imageUrl;
             if (imageUrl) {
-                $('#image-modal-target').textContent = `${currentCategoryData.groups[groupId].name} ${material}`;
+                $('#image-modal-target').textContent = `${allCategoriesData[selectedCategory].groups[groupId].name} ${material}`;
                 $('#image-preview').src = imageUrl;
                 $('#image-viewer-modal').classList.remove('hidden');
             } else {
@@ -233,9 +402,7 @@ const setupEventListeners = () => {
         try {
             const res = await fetch(UPLOAD_URL, { method: 'POST', body: formData });
             const data = await res.json();
-            if (data.error) {
-                throw new Error(data.error.message);
-            }
+            if (data.error) throw new Error(data.error.message);
             const downloadURL = data.secure_url;
             const docRef = doc(db, COLLECTION_NAME, selectedCategory);
             await updateDoc(docRef, { [`groups.${groupId}.items.${material}.imageUrl`]: downloadURL });
@@ -260,11 +427,11 @@ const setupEventListeners = () => {
             if (newName) {
                 const newGroupId = crypto.randomUUID();
                 const newGroup = {
-                    id: newGroupId, name: newName, order: Object.keys(currentCategoryData.groups || {}).length,
+                    id: newGroupId, name: newName, order: Object.keys(allCategoriesData[selectedCategory].groups || {}).length,
                     items: {}
                 };
-                currentCategoryData.materials.forEach(m => {
-                    newGroup.items[m] = { status: STATUS.UNCOLLECTED, message: '', imageUrl: '', timestamp: '', updatedBy: '' };
+                allCategoriesData[selectedCategory].materials.forEach(m => {
+                    newGroup.items[m] = { status: STATUS.UNCOLLECTED, message: '', imageUrl: '', timestamp: '', updatedBy: '', required: 0 };
                 });
                 const docRef = doc(db, COLLECTION_NAME, selectedCategory);
                 await updateDoc(docRef, { [`groups.${newGroupId}`]: newGroup });
@@ -310,11 +477,22 @@ const setupEventListeners = () => {
     setupModal('#add-item-modal', '#add-item-btn', ['#cancel-add-item'], () => {
         $('#confirm-add-item').addEventListener('click', async () => {
             const newItemName = $('#new-item-name').value.trim();
-            if (newItemName && !currentCategoryData.materials.includes(newItemName)) {
-                const docRef = doc(db, COLLECTION_NAME, selectedCategory);
-                const updates = { materials: arrayUnion(newItemName) };
-                Object.keys(currentCategoryData.groups).forEach(groupId => { updates[`groups.${groupId}.items.${newItemName}`] = { status: STATUS.UNCOLLECTED, message: '', imageUrl: '', timestamp: '', updatedBy: '' }; });
-                await updateDoc(docRef, updates);
+            if (newItemName && !allCategoriesData[selectedCategory].materials.includes(newItemName)) {
+                const batch = writeBatch(db);
+                CATEGORIES.forEach(category => {
+                    const docRef = doc(db, COLLECTION_NAME, category);
+                    const updates = { materials: arrayUnion(newItemName) };
+                    const categoryData = allCategoriesData[category];
+                    if(categoryData && categoryData.groups) {
+                        Object.keys(categoryData.groups).forEach(groupId => { updates[`groups.${groupId}.items.${newItemName}`] = { status: STATUS.UNCOLLECTED, message: '', imageUrl: '', timestamp: '', updatedBy: '', required: 0 }; });
+                    }
+                    batch.update(docRef, updates);
+                });
+                const inventoryRef = doc(db, COLLECTION_NAME, INVENTORY_DOC_ID);
+                batch.update(inventoryRef, { [newItemName]: 0 });
+
+                await batch.commit();
+                
                 $('#new-item-name').value = '';
                 $('#add-item-modal').classList.add('hidden');
             }
@@ -332,10 +510,20 @@ const setupEventListeners = () => {
          $('#confirm-delete-item').addEventListener('click', async () => {
             const { itemName } = activeModalTarget;
             if (itemName) {
-                const docRef = doc(db, COLLECTION_NAME, selectedCategory);
-                const updates = { materials: arrayRemove(itemName) };
-                Object.keys(currentCategoryData.groups).forEach(groupId => { updates[`groups.${groupId}.items.${itemName}`] = deleteField(); });
-                await updateDoc(docRef, updates);
+                const batch = writeBatch(db);
+                CATEGORIES.forEach(category => {
+                    const docRef = doc(db, COLLECTION_NAME, category);
+                    const updates = { materials: arrayRemove(itemName) };
+                    const categoryData = allCategoriesData[category];
+                     if(categoryData && categoryData.groups) {
+                        Object.keys(categoryData.groups).forEach(groupId => { updates[`groups.${groupId}.items.${itemName}`] = deleteField(); });
+                    }
+                    batch.update(docRef, updates);
+                });
+                const inventoryRef = doc(db, COLLECTION_NAME, INVENTORY_DOC_ID);
+                batch.update(inventoryRef, {[itemName]: deleteField()});
+                
+                await batch.commit();
                 $('#delete-item-modal').classList.add('hidden');
             }
         });
@@ -358,17 +546,40 @@ async function main() {
         
         await signInAnonymously(auth);
 
-        isAppReady = true;
         setupEventListeners();
         renderCategorySelectors();
-        subscribeToData();
+
+        // Listen to the entire collection for real-time updates
+        unsubscribeFromCollection = onSnapshot(collection(db, COLLECTION_NAME), (querySnapshot) => {
+            if (querySnapshot.empty) {
+                if (!isAppReady) initializeFirestoreData();
+                return;
+            }
+
+            let dataLoaded = false;
+            querySnapshot.forEach(doc => {
+                if (doc.id === INVENTORY_DOC_ID) {
+                    committeeInventory = doc.data();
+                } else {
+                    allCategoriesData[doc.id] = doc.data();
+                }
+                dataLoaded = true;
+            });
+            
+            if(dataLoaded) {
+                 if (!isAppReady) {
+                    isAppReady = true;
+                    $('#tab-collection').classList.add('active');
+                }
+                renderApp();
+            }
+        });
         
     } catch (e) {
         console.error("Initialization failed:", e);
         hideLoader();
-        document.body.innerHTML = `<div class="p-8 text-center text-red-500">アプリの初期化に失敗しました。FirebaseやCloudinaryの情報が正しく設定されているか確認してください。</div>`;
+        document.body.innerHTML = `<div class="p-8 text-center text-red-500">アプリの初期化に失敗しました。FirebaseやCloudinaryの情報が正しく設定されているか、もう一度ご確認ください。特に、Firebaseの匿名認証が有効になっているか確認してください。</div>`;
     }
 }
 
 document.addEventListener('DOMContentLoaded', main);
-
