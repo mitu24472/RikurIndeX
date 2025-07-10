@@ -48,15 +48,13 @@
             <h1 class="text-4xl sm:text-5xl font-bold text-slate-900">配布資料 統合管理システム</h1>
         </header>
 
-        <!-- Main Tab Navigator -->
         <div class="mb-8 border-b border-slate-200">
             <nav class="-mb-px flex space-x-6" aria-label="Tabs">
-                <button id="tab-collection" class="main-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg text-slate-500 hover:text-indigo-600 hover:border-indigo-300">回収状況チェック</button>
+                <button id="tab-collection" class="main-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg text-slate-500 hover:text-indigo-600 hover:border-indigo-300">回収状況・必要数入力</button>
                 <button id="tab-inventory" class="main-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg text-slate-500 hover:text-indigo-600 hover:border-indigo-300">在庫管理・分配</button>
             </nav>
         </div>
 
-        <!-- View: Collection Status -->
         <div id="view-collection">
              <div id="category-selector" class="flex flex-wrap justify-center gap-2 mb-8"></div>
              <div class="bg-white rounded-xl shadow-lg overflow-hidden ring-1 ring-slate-900/5">
@@ -81,48 +79,34 @@
             </div>
         </div>
 
-        <!-- View: Inventory Management -->
         <div id="view-inventory" class="hidden">
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <!-- Left Column: Inputs -->
-                <div>
-                    <div class="bg-white p-6 rounded-xl shadow-lg ring-1 ring-slate-900/5 mb-8">
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                <div class="xl:col-span-1 space-y-8">
+                    <div class="bg-white p-6 rounded-xl shadow-lg ring-1 ring-slate-900/5">
                         <h3 class="text-xl font-bold text-slate-800 mb-4">1. 委員会 在庫数入力</h3>
                         <div id="committee-inventory-inputs" class="space-y-3"></div>
                     </div>
                     <div class="bg-white p-6 rounded-xl shadow-lg ring-1 ring-slate-900/5">
-                        <h3 class="text-xl font-bold text-slate-800 mb-4">2. 全グループ 必要数入力</h3>
-                        <div class="overflow-x-auto max-h-96">
-                            <table class="w-full text-left">
-                                <thead id="requirements-table-header"></thead>
-                                <tbody id="requirements-table-body" class="divide-y divide-slate-200"></tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-                <!-- Right Column: Analysis & Allocation -->
-                <div>
-                    <div class="bg-white p-6 rounded-xl shadow-lg ring-1 ring-slate-900/5 mb-8">
-                        <h3 class="text-xl font-bold text-slate-800 mb-4">3. 在庫状況グラフ</h3>
+                        <h3 class="text-xl font-bold text-slate-800 mb-4">2. 在庫状況グラフ</h3>
                         <div class="h-64"><canvas id="inventory-chart"></canvas></div>
                     </div>
-                    <div class="bg-white p-6 rounded-xl shadow-lg ring-1 ring-slate-900/5">
-                        <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-xl font-bold text-slate-800">4. 最適な分配結果</h3>
-                            <button id="calculate-allocation-btn" class="btn bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-md text-sm shadow-sm">分配を計算</button>
-                        </div>
-                        <div id="allocation-result" class="text-slate-600 max-h-96 overflow-y-auto">
-                            <p>「分配を計算」ボタンを押してください。</p>
-                        </div>
+                </div>
+                <div class="xl:col-span-2 bg-white p-6 rounded-xl shadow-lg ring-1 ring-slate-900/5">
+                     <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-xl font-bold text-slate-800">3. 最適な分配結果</h3>
+                        <button id="calculate-allocation-btn" class="btn bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-md text-sm shadow-sm">分配を計算</button>
+                    </div>
+                    <div id="allocation-result" class="text-slate-600 max-h-[calc(100vh-20rem)] overflow-y-auto">
+                        <p>「回収状況・必要数入力」ページで各グループの必要数を入力後、「分配を計算」ボタンを押してください。</p>
                     </div>
                 </div>
             </div>
         </div>
 
+
         <div class="text-center mt-8"><button id="reset-button" class="btn bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg shadow-md">全データリセット</button></div>
     </div>
 
-    <!-- Modals -->
     <div id="add-group-modal" class="modal hidden"><div class="bg-white rounded-lg shadow-xl p-6 w-11/12 max-w-sm"><h3 class="text-lg font-bold mb-4">新しいグループを追加</h3><input type="text" id="new-group-name" placeholder="グループ名 (例: サッカー部)" class="w-full border-slate-300 rounded-md p-2 mb-4 focus:ring-indigo-500 focus:border-indigo-500"><div class="flex justify-end space-x-2"><button id="cancel-add-group" class="btn bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 px-4 rounded-md">キャンセル</button><button id="confirm-add-group" class="btn bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md">追加</button></div></div></div>
     <div id="edit-group-name-modal" class="modal hidden"><div class="bg-white rounded-lg shadow-xl p-6 w-11/12 max-w-sm"><h3 class="text-lg font-bold mb-4">グループ名編集</h3><input type="text" id="edit-group-name-input" class="w-full border-slate-300 rounded-md p-2 mb-4 focus:ring-indigo-500 focus:border-indigo-500"><div class="flex justify-end space-x-2"><button id="cancel-edit-group-name" class="btn bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 px-4 rounded-md">キャンセル</button><button id="save-group-name" class="btn bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md">保存</button></div></div></div>
     <div id="message-modal" class="modal hidden"><div class="bg-white rounded-lg shadow-xl p-6 w-11/12 max-w-md"><h3 class="text-lg font-bold mb-4">メッセージ編集</h3><p id="message-modal-target" class="text-sm text-slate-600 mb-2"></p><textarea id="message-input" rows="3" placeholder="メッセージを入力..." class="w-full border-slate-300 rounded-md p-2 mb-4 focus:ring-indigo-500 focus:border-indigo-500"></textarea><div class="flex justify-end space-x-2"><button id="cancel-message" class="btn bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 px-4 rounded-md">キャンセル</button><button id="save-message" class="btn bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md">保存</button></div></div></div>

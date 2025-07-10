@@ -93,7 +93,7 @@ const calculateProgress = (groupItems, materials) => {
 };
 
 const renderHeader = (materials) => {
-    const headerRow = `<tr><th class="p-4 font-semibold text-slate-600 text-left text-sm tracking-wider">グループ</th>${materials.map(m => `<th class="p-4 font-semibold text-slate-600 text-sm tracking-wider">${m} <button data-item-name="${m}" class="delete-item-btn text-red-400 hover:text-red-600 ml-1">×</button></th>`).join('')}<th class="p-4 font-semibold text-slate-600 text-sm tracking-wider text-left">完了率</th></tr>`;
+    const headerRow = `<tr><th class="p-4 font-semibold text-slate-600 text-left text-sm tracking-wider">グループ</th>${materials.map(m => `<th class="p-4 font-semibold text-slate-600 text-sm tracking-wider min-w-[160px]">${m} <button data-item-name="${m}" class="delete-item-btn text-red-400 hover:text-red-600 ml-1">×</button></th>`).join('')}<th class="p-4 font-semibold text-slate-600 text-sm tracking-wider text-left">完了率</th></tr>`;
     $('#table-header').innerHTML = headerRow;
 };
 
@@ -115,21 +115,29 @@ const renderBody = (categoryData) => {
             const hasImg = item.imageUrl?.length > 0;
             const timestampInfo = item.timestamp ? `<p class="text-slate-500 font-medium">${item.timestamp}</p>` : `<p class="text-slate-400">未更新</p>`;
 
+            const imageActionHtml = hasImg
+                ? `<button data-group-id="${group.id}" data-material="${m}" class="btn-icon btn-image text-lg p-1 rounded-full hover:bg-slate-200 icon-active">📸</button>`
+                : `<button data-group-id="${group.id}" data-material="${m}" class="btn-upload-img text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-1 px-2 rounded-md shadow-sm">アップロード</button>`;
+
             return `<td class="p-4 align-top">
                 <div class="flex flex-col items-center justify-start h-full">
                     <div class="flex items-center justify-center">
                         <button data-group-id="${group.id}" data-material="${m}" class="btn-toggle text-3xl p-2 rounded-full hover:bg-slate-100">${EMOJI_MAP[item.status]}</button>
-                        <div class="flex flex-col ml-1 space-y-1">
+                        <div class="flex flex-col ml-2 space-y-1.5">
                             <button data-group-id="${group.id}" data-material="${m}" class="btn-icon btn-message text-lg p-1 rounded-full hover:bg-slate-200 ${hasMsg ? 'icon-active' : 'text-slate-400'}">💬</button>
-                            <button data-group-id="${group.id}" data-material="${m}" class="btn-icon btn-image text-lg p-1 rounded-full hover:bg-slate-200 ${hasImg ? 'icon-active' : 'text-slate-400'}">📸</button>
+                            ${imageActionHtml}
                         </div>
                     </div>
                     <div class="text-xs mt-1 text-center">${timestampInfo}</div>
+                    <div class="mt-2">
+                        <label class="text-xs font-medium text-slate-500">必要数:</label>
+                        <input type="number" min="0" value="${item.required || 0}" data-group-id="${group.id}" data-material="${m}" class="requirement-input-collection w-20 text-center border-slate-300 rounded-md p-1 focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
                 </div>
             </td>`;
         }).join('');
         return `<tr>
-            <td class="p-4 font-semibold text-slate-700 text-left">
+            <td class="p-4 font-semibold text-slate-700 text-left align-top">
                 <div class="flex items-center">
                     <span>${group.name}</span>
                     <button class="edit-group-name-btn ml-2 text-slate-400 hover:text-indigo-600" data-group-id="${group.id}" data-current-name="${group.name}"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"></path><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd"></path></svg></button>
@@ -137,7 +145,7 @@ const renderBody = (categoryData) => {
                 </div>
             </td>
             ${itemCells}
-            <td class="p-4 text-left w-40">
+            <td class="p-4 text-left w-40 align-top">
                 <div class="text-sm font-bold text-slate-700">${progress.percent}%</div>
                 <div class="progress-bar mt-1"><div class="progress-bar-inner" style="width: ${progress.percent}%;"></div></div>
                 <div class="text-xs text-slate-500 mt-1">${progress.completed} / ${progress.total}</div>
@@ -161,7 +169,6 @@ const renderApp = () => {
     
     if (!$('#view-inventory').classList.contains('hidden')) {
         renderCommitteeInventory();
-        renderRequirementsTable();
         updateChart();
     }
 };
@@ -175,35 +182,6 @@ const renderCommitteeInventory = () => {
             <input type="number" min="0" data-item-name="${m}" value="${committeeInventory[m] || 0}" class="inventory-input w-full border-slate-300 rounded-md p-2 focus:ring-indigo-500 focus:border-indigo-500">
         </div>
     `).join('');
-};
-
-const renderRequirementsTable = () => {
-    const allMaterials = Object.keys(committeeInventory).sort();
-    $('#requirements-table-header').innerHTML = `
-        <tr class="border-b border-slate-200">
-            <th class="p-2 text-left font-semibold text-slate-600">カテゴリ/グループ</th>
-            ${allMaterials.map(m => `<th class="p-2 font-semibold text-slate-600">${m}</th>`).join('')}
-        </tr>
-    `;
-
-    let tableBodyHtml = '';
-    CATEGORIES.forEach(category => {
-        const categoryData = allCategoriesData[category];
-        if (categoryData && categoryData.groups) {
-            const sortedGroups = Object.values(categoryData.groups).sort((a,b) => a.order - b.order);
-            sortedGroups.forEach(group => {
-                tableBodyHtml += `<tr>
-                    <td class="p-2 font-semibold text-slate-700">${category.replace('年生', '年')}-${group.name}</td>
-                    ${allMaterials.map(m => `
-                        <td class="p-1">
-                            <input type="number" min="0" data-category="${category}" data-group-id="${group.id}" data-item-name="${m}" value="${group.items[m]?.required || 0}" class="requirement-input w-16 text-center border-slate-300 rounded-md p-1 focus:ring-indigo-500 focus:border-indigo-500">
-                        </td>
-                    `).join('')}
-                </tr>`;
-            });
-        }
-    });
-    $('#requirements-table-body').innerHTML = tableBodyHtml;
 };
 
 const updateChart = () => {
@@ -312,7 +290,6 @@ const setupEventListeners = () => {
         $('#tab-inventory').classList.add('active');
         $('#tab-collection').classList.remove('active');
         renderCommitteeInventory();
-        renderRequirementsTable();
         updateChart();
     });
 
@@ -323,14 +300,6 @@ const setupEventListeners = () => {
             const value = parseInt(e.target.value, 10) || 0;
             const docRef = doc(db, COLLECTION_NAME, INVENTORY_DOC_ID);
             await updateDoc(docRef, { [itemName]: value });
-        }
-    });
-     $('#requirements-table-body').addEventListener('change', async (e) => {
-        if (e.target.matches('.requirement-input')) {
-            const { category, groupId, itemName } = e.target.dataset;
-            const value = parseInt(e.target.value, 10) || 0;
-            const docRef = doc(db, COLLECTION_NAME, category);
-            await updateDoc(docRef, { [`groups.${groupId}.items.${itemName}.required`]: value });
         }
     });
     $('#calculate-allocation-btn').addEventListener('click', calculateAndDisplayAllocation);
@@ -373,9 +342,9 @@ const setupEventListeners = () => {
                 $('#image-modal-target').textContent = `${allCategoriesData[selectedCategory].groups[groupId].name} ${material}`;
                 $('#image-preview').src = imageUrl;
                 $('#image-viewer-modal').classList.remove('hidden');
-            } else {
-                $('#image-upload-input').click();
             }
+        } else if (button.matches('.btn-upload-img')) {
+             $('#image-upload-input').click();
         } else if (button.matches('.edit-group-name-btn')) {
             $('#edit-group-name-input').value = currentName;
             $('#edit-group-name-modal').classList.remove('hidden');
@@ -385,6 +354,19 @@ const setupEventListeners = () => {
                 const docRef = doc(db, COLLECTION_NAME, selectedCategory);
                 await updateDoc(docRef, { [`groups.${groupId}`]: deleteField() });
             }
+        }
+    });
+
+    $('#status-table-body').addEventListener('change', async (e) => {
+        if (e.target.matches('.requirement-input-collection')) {
+            const { groupId, material } = e.target.dataset;
+            let value = parseInt(e.target.value, 10) || 0;
+            if (value < 0) {
+                value = 0;
+                e.target.value = 0;
+            }
+            const docRef = doc(db, COLLECTION_NAME, selectedCategory);
+            await updateDoc(docRef, { [`groups.${groupId}.items.${material}.required`]: value });
         }
     });
 
