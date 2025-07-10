@@ -26,7 +26,7 @@ const CATEGORIES = ['1年生', '2年生', '3年生', '4年生', '5年生', '6年
 const INITIAL_GROUP_IDS = ['A', 'B', 'C', 'D'];
 const STATUS = { COLLECTED: 'collected', UNCOLLECTED: 'uncollected', NOT_REQUIRED: 'not_required', NOT_APPLICABLE: 'na' };
 const EMOJI_MAP = { [STATUS.COLLECTED]: '✅', [STATUS.UNCOLLECTED]: '🟡', [STATUS.NOT_REQUIRED]: '🚫' };
-const COLLECTION_NAME = 'handouts_data'; 
+const COLLECTION_NAME = 'handouts_data_v2'; 
 
 const $ = (selector) => document.querySelector(selector);
 let db, auth;
@@ -233,16 +233,15 @@ const setupEventListeners = () => {
         try {
             const res = await fetch(UPLOAD_URL, { method: 'POST', body: formData });
             const data = await res.json();
-            if (data.secure_url) {
-                const downloadURL = data.secure_url;
-                const docRef = doc(db, COLLECTION_NAME, selectedCategory);
-                await updateDoc(docRef, { [`groups.${groupId}.items.${material}.imageUrl`]: downloadURL });
-            } else {
-                throw new Error('Cloudinary upload failed');
+            if (data.error) {
+                throw new Error(data.error.message);
             }
+            const downloadURL = data.secure_url;
+            const docRef = doc(db, COLLECTION_NAME, selectedCategory);
+            await updateDoc(docRef, { [`groups.${groupId}.items.${material}.imageUrl`]: downloadURL });
         } catch (error) {
-            console.error("Upload failed", error);
-            alert("画像のアップロードに失敗しました。");
+            console.error("Upload failed:", error);
+            alert(`画像のアップロードに失敗しました: ${error.message}`);
         } finally {
             hideLoader();
             e.target.value = '';
@@ -299,7 +298,7 @@ const setupEventListeners = () => {
 
     setupModal('#image-viewer-modal', null, ['#close-image-viewer'], () => {
         $('#delete-image-btn').addEventListener('click', async () => {
-            if (confirm('この画像を削除しますか？\n（Cloudinaryからは削除されません）')) {
+            if (confirm('このアプリから画像の関連付けを削除しますか？\n（画像自体はCloudinaryに残ります）')) {
                 const { groupId, material } = activeModalTarget;
                 const docRef = doc(db, COLLECTION_NAME, selectedCategory);
                 await updateDoc(docRef, { [`groups.${groupId}.items.${material}.imageUrl`]: '' });
@@ -372,3 +371,4 @@ async function main() {
 }
 
 document.addEventListener('DOMContentLoaded', main);
+
