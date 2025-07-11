@@ -1,1 +1,1 @@
-This is an app for managing stocks and simple calculating to provide stocks
+This is an app for managing the inventory and simple calculating to provide goods from the inventory
