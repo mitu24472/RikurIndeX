@@ -66,7 +66,7 @@ const getInitialData = (category) => {
 };
 
 const initializeFirestoreData = async () => {
-    showLoader('データを初期化中...');
+    showLoader('データをロード中...');
     try {
         const batch = writeBatch(db);
         for (const category of CATEGORIES) {
@@ -520,7 +520,7 @@ const setupEventListeners = () => {
 };
 
 async function main() {
-    showLoader('アプリを初期化中...');
+    showLoader('アプリをロード中...');
     try {
         const app = initializeApp(firebaseConfig);
         db = getFirestore(app);
@@ -560,7 +560,7 @@ async function main() {
     } catch (e) {
         console.error("Initialization failed:", e);
         hideLoader();
-        document.body.innerHTML = `<div class="p-8 text-center text-red-500">アプリの初期化に失敗しました。FirebaseやCloudinaryの情報が正しく設定されているか、もう一度ご確認ください。特に、Firebaseの匿名認証が有効になっているか確認してください。</div>`;
+        document.body.innerHTML = `<div class="p-8 text-center text-red-500">アプリのロードに失敗しました。FirebaseやCloudinaryの情報が正しく設定されているか、もう一度ご確認ください。特に、Firebaseの匿名認証が有効になっているか確認してください。</div>`;
     }
 }
 
